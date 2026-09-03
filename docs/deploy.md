@@ -78,7 +78,7 @@ sandboxd reads one JSON file (`-config`, default
 | `preview_secret` | — | cluster-shared HMAC secret signing preview tokens (all nodes share one) |
 | `preview_advertise` | = `preview_listen` | the base URL a browser/proxy reaches this node's preview server at |
 | `checkpoint_dir` | `<data_dir>/checkpoints` | where checkpoints and promoted templates live. Point it at a shared FUSE mount (JuiceFS over object storage, NFS) and every node sharing the mount can branch every checkpoint — the path's filesystem is the operator's choice. One contract on any shared root (mount or bucket): a template key has a single writer — promotes go to the sandbox's owner node, and operators must not race promotes of one name from different nodes (checkpoint ids are node-generated and never collide). A checkpoint deleted on one node while another is mid-branch from it fails that branch visibly |
-| `checkpoint_store` | dir | checkpoint AND promoted-template backend (both live in one store root, id-namespaced ck_/tp_): `{"kind": "s3", "s3": {"bucket": "…", "prefix": "ck/", "endpoint": "…", "region": "…", "force_path_style": true}}` stores checkpoints in object storage (any node claims any checkpoint, no shared mount needed). Credentials come from the standard AWS chain (env/IAM role), never this file. A crash between upload and the meta.json commit marker leaves orphan objects invisible to listings — add an S3 lifecycle rule to reclaim them. Absent = the dir backend at `checkpoint_dir` |
+| `checkpoint_store` | dir | checkpoint AND promoted-template backend (both live in one store root, id-namespaced ck_/tp_): `{"kind": "s3", "s3": {"bucket": "…", "prefix": "ck/", "endpoint": "…", "region": "…", "force_path_style": true, "sparse": true}}` stores checkpoints in object storage (any node claims any checkpoint, no shared mount needed). `sparse` packs only allocated checkpoint extents into 64 MiB objects and reconstructs holes on fetch; default false for rolling upgrades. Deploy a sparse-capable sandboxd to every node before enabling it cluster-wide. Credentials come from the standard AWS chain (env/IAM role), never this file. A crash between upload and the meta.json commit marker leaves orphan objects invisible to listings — add an S3 lifecycle rule to reclaim them. Absent = the dir backend at `checkpoint_dir` |
 | `checkpoint_ttl_hours` | 0 (keep forever) | ages out checkpoints older than this; the sweep runs hourly and at startup. Explicit deletes never wait for it |
 | `warm_max` (pool entry) | 0 (static) | turns on the demand-adaptive watermark for that pool: the warm target rises from `warm` toward `warm_max` while claims arrive faster than the measured provision lead covers, and decays back over ~a minute of silence |
 | `max_claims` | 0 (unlimited) | node-wide cap on live claims; claim/fork/branch requests beyond it answer 429 with the pool state unharmed (on a cluster, a claim is first redirected to a warm peer) |
@@ -135,7 +135,7 @@ here validates on load:
 
   "checkpoint_store": {
     "kind": "s3",
-    "s3": {"bucket": "sandbox-ckpt", "prefix": "ck/", "region": "us-east-1"}
+    "s3": {"bucket": "sandbox-ckpt", "prefix": "ck/", "region": "us-east-1", "sparse": true}
   },
   "checkpoint_ttl_hours": 168,
 
