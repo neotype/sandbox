@@ -190,6 +190,26 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if req.Workspace != nil {
+		token, authorized := sandboxToken(w, r)
+		if !authorized {
+			return
+		}
+		if !s.isRootToken(token) {
+			writeErr(w, http.StatusForbidden, "persistent workspaces require root authentication")
+			return
+		}
+		mgr, ok := s.mgr.(interface {
+			ClaimWorkspace(context.Context, types.ClaimRequest) (*types.Sandbox, error)
+		})
+		if !ok {
+			writeErr(w, http.StatusConflict, "persistent workspaces unavailable")
+			return
+		}
+		sb, err := mgr.ClaimWorkspace(r.Context(), req)
+		writeResult(w, r, "workspace_claim", "", "workspace recovery failed; no empty replacement", err, func() { writeJSON(w, http.StatusOK, s.claimResponse(sb)) })
+		return
+	}
 	key := req.Key()
 	hash := key.Hash()
 
@@ -363,6 +383,26 @@ func (s *Server) handleDeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		Net:      types.NetShape(q.Get("net")),
 		Size:     types.Size(q.Get("size")),
 	}
+	if req.Workspace != nil {
+		token, authorized := sandboxToken(w, r)
+		if !authorized {
+			return
+		}
+		if !s.isRootToken(token) {
+			writeErr(w, http.StatusForbidden, "persistent workspaces require root authentication")
+			return
+		}
+		mgr, ok := s.mgr.(interface {
+			ClaimWorkspace(context.Context, types.ClaimRequest) (*types.Sandbox, error)
+		})
+		if !ok {
+			writeErr(w, http.StatusConflict, "persistent workspaces unavailable")
+			return
+		}
+		sb, err := mgr.ClaimWorkspace(r.Context(), req)
+		writeResult(w, r, "workspace_claim", "", "workspace recovery failed; no empty replacement", err, func() { writeJSON(w, http.StatusOK, s.claimResponse(sb)) })
+		return
+	}
 	key := req.Key()
 	err := s.mgr.DeleteTemplate(r.Context(), key, tenantFrom(r.Context()))
 	// Unknown here but owned by a peer per gossip: redirect the SDK to the
@@ -499,7 +539,7 @@ func (s *Server) resolveScope(r *http.Request) (string, bool) {
 
 func (s *Server) claimResponse(sb *types.Sandbox) types.ClaimResponse {
 	return types.ClaimResponse{
-		ID: sb.ID, Token: sb.Token, Deadline: sb.Deadline,
+		ID: sb.ID, Token: sb.Token, Deadline: sb.Deadline, WorkspaceID: sb.WorkspaceID,
 		OwnerAddr: s.advertise, FromCheckpoint: sb.FromCheckpoint,
 	}
 }

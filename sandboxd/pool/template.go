@@ -36,7 +36,7 @@ func (m *Manager) Promote(ctx context.Context, id, token, template, tenant strin
 	if !ok {
 		return types.PoolKey{}, ErrUnknownSandbox
 	}
-	if !sb.Key.Capturable() {
+	if sb.WorkspaceID != "" || !sb.Key.Capturable() {
 		return types.PoolKey{}, ErrNoEgressFork
 	}
 	key := types.PoolKey{Template: template, Net: sb.Key.Net, Size: sb.Key.Size, Engine: sb.Key.Engine}

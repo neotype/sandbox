@@ -41,7 +41,7 @@ func (m *Manager) WakeAgentSocket(ctx context.Context, id, token string) (string
 
 // hibernateLocked is Hibernate's body; the caller holds sb.Transition.
 func (m *Manager) hibernateLocked(ctx context.Context, sb *types.Sandbox) error {
-	if sb.Key.Net == types.NetEgress {
+	if sb.WorkspaceID != "" || sb.Key.Net == types.NetEgress {
 		// cocoon resumes the guest before its fresh tap can be re-locked, so a
 		// woken egress guest would egress unlocked; keep the lane live instead.
 		return ErrNoEgressHibernate
@@ -136,7 +136,7 @@ func (m *Manager) wakeResolved(ctx context.Context, sb *types.Sandbox) (string, 
 	}
 	// The egress lane never hibernates (its fresh tap can't be locked before the
 	// guest resumes); a hibernated one is corrupt state — fail closed.
-	if sb.Key.Net == types.NetEgress {
+	if sb.WorkspaceID != "" || sb.Key.Net == types.NetEgress {
 		return "", fmt.Errorf("wake %s: egress lane cannot resume from hibernation", sb.ID)
 	}
 	// See Hibernate: a half-restored VM is worse than a wasted wake.

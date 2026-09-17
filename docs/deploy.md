@@ -267,3 +267,42 @@ sandboxd:
   (GCP/AWS) in production, or a plain nginx/Caddy for self-hosting. It
   understands nothing about tokens — not sandboxd's code. Dev and e2e hit
   `preview_listen` directly over HTTP.
+
+## Production fork: durable Pigeon workspaces
+
+Opt-in `workspace_dir` (absolute, operator-owned, independent of `data_dir`)
+plus `workspace_size_bytes` (default 8 GiB; 1–64 GiB) enables root-only
+`POST /v1/claim` with `workspace: {id: <64 lowercase hex>, create: boolean}`.
+The response must echo `workspace_id`. IDs are opaque and generation-specific;
+never use raw user identities. Unset API tokens and tenant tokens cannot admit
+persistent disks. This backport requires Cocoon's `vm disk attach` CLI (production
+uses v0.6.0), ext4 guest support, and host `mkfs.ext4`.
+
+Each workspace gets a private sparse raw ext4 disk and fsynced holder journal.
+Creation never formats an existing image. `create: false` refuses missing disks.
+A disk is mounted at `/workspace`, discovered by kernel serial, with an identity
+marker checked before admission. A directory flock excludes a second daemon;
+a durable VM holder excludes concurrent guest writers and survives failed
+removal and process crashes. Repeated claims adopt the existing live claim.
+TTL/release flush and unmount, remove compute, and retain the disk. A later claim
+mounts the same disk in a new VM; ext4 journal replay handles unclean shutdown.
+No memory snapshot is used and egress hibernation restrictions stay in force.
+
+Only `/workspace` is durable: RAM, running commands, `/tmp`, root filesystem
+package installs and unflushed writes are not restored. A VM loss ends the
+current turn; only the next turn boundary may restore its bound disk. Commands
+are not replayed. Disk or identity corruption fails closed, not into an empty VM.
+The journal stores no bearer tokens or user IDs. Keep this directory on durable
+host storage and back it up separately. Single-node exclusivity is intentional;
+shared/multi-node disk placement is not supported.
+
+There is a 32-workspace admission cap. Explicit reset rotates the caller's
+binding, leaving the old disk retained but inaccessible to the new workspace.
+No automated GC deletes workspaces. Operator cleanup requires identifying an
+abandoned disk, confirming its holder VM is absent, and preserving an offline
+backup first. Monitor disk count/free space; do not wipe the journal independently
+of its images. Deploy only at an idle boundary, retaining the previous binary
+and config. Disable Pigeon durable admission before a backend binary rollback;
+retain all images, journals and safety markers. Never recreate a missing disk to
+clear an error. This does not recover workspaces reaped before disk retention
+was enabled.

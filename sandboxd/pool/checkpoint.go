@@ -33,7 +33,7 @@ func (m *Manager) Checkpoint(ctx context.Context, id, token, name, tenant string
 	if !ok {
 		return types.Checkpoint{}, ErrUnknownSandbox
 	}
-	if !sb.Key.Capturable() {
+	if sb.WorkspaceID != "" || !sb.Key.Capturable() {
 		return types.Checkpoint{}, ErrNoEgressFork
 	}
 	// See Hibernate: a started capture must finish even if the caller hangs up.
