@@ -957,6 +957,7 @@ func newTenantTestServer(t *testing.T, apiToken string, tenants []config.TenantS
 // the claim hook stands in for the provision result. Tenant-scoped methods
 // record the tenant they were handed in gotTenant.
 type fakeManager struct {
+	renew     func(id, token string, ttl time.Duration) (time.Time, error)
 	claim     func(ctx context.Context, key types.PoolKey, ttl time.Duration) (*types.Sandbox, error)
 	release   func(id, token string) error
 	releaseOp func(id string) error
@@ -1152,3 +1153,70 @@ func (f *fakePlacer) Candidates(string) []string     { return f.addrs }
 func (f *fakePlacer) TemplateOwners(string) []string { return f.owners }
 func (f *fakePlacer) PeerAddrs() []string            { return f.addrs }
 func (f *fakePlacer) ConfigMismatches() int          { return 0 }
+
+func (f *fakeManager) Renew(_ context.Context, id, token string, ttl time.Duration) (time.Time, error) {
+	if f.renew != nil {
+		return f.renew(id, token, ttl)
+	}
+	return time.Unix(42, 0), nil
+}
+
+func TestRenewHTTP(t *testing.T) {
+	for _, tc := range []struct {
+		name, bearer, body string
+		err                error
+		want               int
+	}{
+		{"success", "sandbox-token", `{"ttl_seconds":1800}`, nil, 200},
+		{"missing bearer", "", `{"ttl_seconds":1800}`, nil, 401},
+		{"zero", "sandbox-token", `{"ttl_seconds":0}`, nil, 400},
+		{"negative", "sandbox-token", `{"ttl_seconds":-1}`, nil, 400},
+		{"too large", "sandbox-token", `{"ttl_seconds":86401}`, nil, 400},
+		{"fraction", "sandbox-token", `{"ttl_seconds":1.5}`, nil, 400},
+		{"invalid JSON", "sandbox-token", `{broken`, nil, 400},
+		{"unknown", "wrong-token", `{"ttl_seconds":1800}`, pool.ErrUnknownSandbox, 404},
+		{"expired", "sandbox-token", `{"ttl_seconds":1800}`, pool.ErrLeaseExpired, 409},
+		{"persist failure", "sandbox-token", `{"ttl_seconds":1800}`, errors.New("disk full"), 500},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			mgr := &fakeManager{renew: func(id, token string, ttl time.Duration) (time.Time, error) {
+				called = true
+				if id != "sb_1" || token != tc.bearer || ttl != 30*time.Minute {
+					t.Errorf("unexpected renewal arguments")
+				}
+				return time.Unix(42, 0).UTC(), tc.err
+			}}
+			ts := newTestServer(t, "", mgr, nil)
+			req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/sandboxes/sb_1/renew", strings.NewReader(tc.body))
+			if tc.bearer != "" {
+				req.Header.Set("Authorization", "Bearer "+tc.bearer)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != tc.want {
+				t.Fatalf("status=%d want=%d", resp.StatusCode, tc.want)
+			}
+			if tc.want == 200 {
+				var body struct {
+					ID       string
+					Deadline time.Time
+				}
+				if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+					t.Fatal(err)
+				}
+				if body.ID != "sb_1" || !body.Deadline.Equal(time.Unix(42, 0)) {
+					t.Fatal("invalid receipt")
+				}
+			}
+			if tc.want == 400 || tc.want == 401 {
+				if called {
+					t.Fatal("invalid request reached manager")
+				}
+			}
+		})
+	}
+}

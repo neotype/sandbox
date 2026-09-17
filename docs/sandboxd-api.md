@@ -313,3 +313,17 @@ Unauthenticated liveness probe; answers `ok`.
   `ReadHeaderTimeout` for slowloris protection.
 - Shutdown force-closes in-flight relays and leaves VMs running for the next
   reconcile.
+
+## Renew a sandbox lease (production backport)
+
+`POST /v1/sandboxes/{id}/renew` takes the sandbox bearer token and JSON
+`{"ttl_seconds":1800}` (integer, 1–86400). Success returns `{"id":"sb_...",
+"deadline":"..."}`. The deadline is extended from the current time, never
+shortened, and persisted before acknowledgement. The same VM, token and files
+are retained; this does not wake a hibernated VM or reset activity timers.
+Unknown sandbox / wrong bearer returns 404, expired or archived lease returns
+409, invalid TTL/body returns 400, and failed persistence returns 500 without
+changing the in-memory deadline. Renewal and reaping/release are serialized.
+Clients must stop using a workspace when renewal fails, not implicitly create a
+replacement. Deploy this backport on the pinned production branch; it does not
+upgrade the host's network configuration schema to current main.
