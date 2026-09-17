@@ -161,7 +161,8 @@ type Sandbox struct {
 	// aggregated apiserver passes the k8s "<namespace>/<name>"), carried into
 	// the operator index so a listed sandbox maps back to its claim name.
 	// Empty for warm-pool, fork, and checkpoint-branch claims.
-	ClaimRef string `json:"claim_ref,omitempty"`
+	ClaimRef    string `json:"claim_ref,omitempty"`
+	WorkspaceID string `json:"workspace_id,omitempty"`
 
 	VsockSocket string `json:"vsock_socket,omitempty"`
 	// TAP is the egress-lane NIC's host tap, captured at provision; empty on

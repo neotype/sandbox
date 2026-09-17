@@ -254,9 +254,10 @@ type Manager struct {
 	dial  egress.DialFunc
 	sweep func(map[string]bool) error
 
-	mu      sync.Mutex
-	pools   map[types.PoolKey]*pool
-	claimed map[string]*types.Sandbox
+	workspaceMu sync.Mutex
+	mu          sync.Mutex
+	pools       map[types.PoolKey]*pool
+	claimed     map[string]*types.Sandbox
 
 	refillSem  chan struct{}
 	probeSem   chan struct{}

@@ -15,10 +15,12 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/projecteru2/core/log"
@@ -49,11 +51,16 @@ const (
 
 // Engine runs cocoon commands on the local node.
 type Engine struct {
-	bin         string
-	bridge      string
-	network     string
-	noDirectIO  bool
-	restoreMode types.RestoreMode
+	workspaceLock *os.File
+	workspaceMu   sync.Mutex
+	workspaceDir  string
+	workspaceSize int64
+	workspaces    map[string]workspaceRecord
+	bin           string
+	bridge        string
+	network       string
+	noDirectIO    bool
+	restoreMode   types.RestoreMode
 }
 
 // New returns a cocoon engine with node-wide network and disk policy.
@@ -123,8 +130,7 @@ func (e *Engine) RunCold(ctx context.Context, name string, key types.PoolKey) (t
 
 // Remove force-deletes a VM.
 func (e *Engine) Remove(ctx context.Context, name string) error {
-	_, err := e.run(ctx, "vm", "rm", "--force", name)
-	return err
+	return e.removeWorkspaceVM(ctx, name)
 }
 
 // SnapshotSave snapshots a running VM under snapName.

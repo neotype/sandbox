@@ -17,7 +17,13 @@ type ClaimRequest struct {
 	// ClaimRef is an opaque caller reference (the aggregated apiserver passes
 	// the k8s "<namespace>/<name>") recorded on the claim so the read path can
 	// map a listed sandbox back to the name it was claimed under. Optional.
-	ClaimRef string `json:"claim_ref,omitempty"`
+	ClaimRef  string            `json:"claim_ref,omitempty"`
+	Workspace *WorkspaceRequest `json:"workspace,omitempty"`
+}
+
+type WorkspaceRequest struct {
+	ID     string `json:"id"`
+	Create bool   `json:"create,omitempty"`
 }
 
 // Key resolves the requested pool key with the wire defaults filled.
@@ -34,10 +40,11 @@ func (r ClaimRequest) TTL() time.Duration {
 // carries ID/Token/Deadline/OwnerAddr; a mesh miss carries Redirect (peer
 // addresses to retry, MOVED-style), and the two are mutually exclusive.
 type ClaimResponse struct {
-	ID        string    `json:"id,omitempty"`
-	Token     string    `json:"token,omitempty"`
-	Deadline  time.Time `json:"deadline,omitzero"`
-	OwnerAddr string    `json:"owner_addr,omitempty"`
+	WorkspaceID string    `json:"workspace_id,omitempty"`
+	ID          string    `json:"id,omitempty"`
+	Token       string    `json:"token,omitempty"`
+	Deadline    time.Time `json:"deadline,omitzero"`
+	OwnerAddr   string    `json:"owner_addr,omitempty"`
 
 	// FromCheckpoint names the checkpoint a branched claim was born from,
 	// so clients can reconstruct the checkpoint tree.

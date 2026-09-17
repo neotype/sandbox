@@ -70,6 +70,9 @@ func main() {
 		logger.Fatalf(ctx, err, "load config")
 	}
 	eng := engine.New(cfg.CocoonBin, cfg.Bridge, cfg.Network, cfg.NoDirectIO, cfg.RestoreMode)
+	if err := eng.EnableWorkspaces(cfg.WorkspaceDir, cfg.WorkspaceSizeBytes); err != nil {
+		logger.Fatalf(ctx, err, "load workspace bindings")
+	}
 	if v, warn := eng.VersionWarning(ctx); warn != "" {
 		logger.Warn(ctx, warn)
 	} else {

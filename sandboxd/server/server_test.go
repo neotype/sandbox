@@ -1220,3 +1220,26 @@ func TestRenewHTTP(t *testing.T) {
 		})
 	}
 }
+
+func TestPersistentWorkspaceRequiresRootAndDoesNotFallBack(t *testing.T) {
+	ts := newTestServer(t, "", &fakeManager{}, nil)
+	resp, err := http.Post(ts.URL+"/v1/claim", "application/json", strings.NewReader(`{"template":"rt:24.04","workspace":{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","create":true}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatal("open node allowed persistent workspace")
+	}
+	ts2 := newTestServer(t, "root-token", &fakeManager{}, nil)
+	req, _ := http.NewRequest(http.MethodPost, ts2.URL+"/v1/claim", strings.NewReader(`{"template":"rt:24.04","workspace":{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","create":true}}`))
+	req.Header.Set("Authorization", "Bearer root-token")
+	reply, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reply.Body.Close()
+	if reply.StatusCode != http.StatusConflict {
+		t.Fatalf("unsupported backend fell back: %d", reply.StatusCode)
+	}
+}

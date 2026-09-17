@@ -160,9 +160,11 @@ func (mc *MeshConfig) DecodedKey() ([]byte, error) {
 
 // Config is the sandboxd node configuration.
 type Config struct {
-	Listen    string `json:"listen"`
-	DataDir   string `json:"data_dir"`
-	CocoonBin string `json:"cocoon_bin"`
+	Listen             string `json:"listen"`
+	DataDir            string `json:"data_dir"`
+	WorkspaceDir       string `json:"workspace_dir,omitempty"`
+	WorkspaceSizeBytes int64  `json:"workspace_size_bytes,omitempty"`
+	CocoonBin          string `json:"cocoon_bin"`
 
 	// AdvertiseAddr is the host:port the data plane reaches this node at; it
 	// is returned as a claim's owner address (and, at M2c, gossiped). Defaults
