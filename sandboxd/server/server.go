@@ -47,6 +47,7 @@ var poolErrHTTP = []struct {
 	{pool.ErrQuota, http.StatusTooManyRequests, ""},
 	{pool.ErrPooledTemplate, http.StatusConflict, ""},
 	{pool.ErrTemplateOwned, http.StatusConflict, ""},
+	{pool.ErrLeaseExpired, http.StatusConflict, "sandbox lease expired"},
 	{pool.ErrUnknownSandbox, http.StatusNotFound, "unknown sandbox"},
 	{pool.ErrUnknownTemplate, http.StatusNotFound, "unknown template"},
 	{pool.ErrUnknownCheckpoint, http.StatusNotFound, "unknown checkpoint"},
@@ -58,6 +59,7 @@ var poolErrHTTP = []struct {
 type Manager interface {
 	ClaimWarm(ctx context.Context, key types.PoolKey, ttl time.Duration, tenant, claimRef string) (*types.Sandbox, error)
 	ClaimProvision(ctx context.Context, key types.PoolKey, ttl time.Duration, tenant, claimRef string) (*types.Sandbox, error)
+	Renew(ctx context.Context, id, token string, ttl time.Duration) (time.Time, error)
 	Release(ctx context.Context, id, token string) error
 	ReleaseOperator(ctx context.Context, id string) error
 	Hibernate(ctx context.Context, id, token string) error
@@ -156,6 +158,7 @@ func New(apiToken string, tenants []config.TenantSpec, advertise string, mgr Man
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/claim", s.requireToken(s.handleClaim))
+	mux.HandleFunc("POST /v1/sandboxes/{id}/renew", s.handleRenew)
 	mux.HandleFunc("POST /v1/sandboxes/{id}/release", s.handleRelease)
 	mux.HandleFunc("POST /v1/sandboxes/{id}/hibernate", s.handleSandboxVerb("hibernate", s.mgr.Hibernate))
 	// Fork and promote create node resources, so they take the same token
@@ -499,4 +502,29 @@ func (s *Server) claimResponse(sb *types.Sandbox) types.ClaimResponse {
 		ID: sb.ID, Token: sb.Token, Deadline: sb.Deadline,
 		OwnerAddr: s.advertise, FromCheckpoint: sb.FromCheckpoint,
 	}
+}
+
+// handleRenew accepts only the sandbox bearer; a node/tenant token alone cannot renew a guest.
+func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
+	token, ok := sandboxToken(w, r)
+	if !ok {
+		return
+	}
+	req, ok := decodeBody[struct {
+		TTLSeconds int `json:"ttl_seconds"`
+	}](w, r)
+	if !ok {
+		return
+	}
+	if req.TTLSeconds < 1 || req.TTLSeconds > 86400 {
+		writeErr(w, http.StatusBadRequest, "ttl_seconds must be 1..86400")
+		return
+	}
+	deadline, err := s.mgr.Renew(r.Context(), r.PathValue("id"), token, time.Duration(req.TTLSeconds)*time.Second)
+	writeResult(w, r, "renew", r.PathValue("id"), "renew failed", err, func() {
+		writeJSON(w, http.StatusOK, struct {
+			ID       string    `json:"id"`
+			Deadline time.Time `json:"deadline"`
+		}{r.PathValue("id"), deadline})
+	})
 }
